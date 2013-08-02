@@ -1,0 +1,13 @@
+{
+	'V': ['authorDecpt', 'helpful_ratio', 'helpful_total', 'isAvail', 'isRealName','nrd', 'prodDecpt', 'revDecpt',
+          'revLogLen', 'starRating', 'verifiedPurchase'],
+	'E': [['authorDecpt', 'revDecpt'],
+		['authorDecpt', 'helpful_ratio'],
+        ['prodDecpt', 'revDecpt'],
+        ['prodDecpt', 'starRating'],
+		['revDecpt', 'helpful_ratio'],
+		['revDecpt', 'starRating'],
+		['revDecpt', 'D'],
+
+		['R', 'L']]
+}

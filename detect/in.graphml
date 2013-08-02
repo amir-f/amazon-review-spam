@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?><graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+<key attr.name="label" attr.type="string" for="node" id="label"/>
+<key attr.name="Edge Label" attr.type="string" for="edge" id="edgelabel"/>
+<key attr.name="weight" attr.type="double" for="edge" id="weight"/>
+<key attr.name="Edge Id" attr.type="string" for="edge" id="edgeid"/>
+<key attr.name="x" attr.type="float" for="node" id="x"/>
+<key attr.name="y" attr.type="float" for="node" id="y"/>
+<key attr.name="size" attr.type="float" for="node" id="size"/>
+<key attr.name="part" attr.type="int" for="node" id="part"/>
+<graph edgedefault="undirected">
+<node id="16578">
+<data key="label">686.7605</data>
+<data key="part">1</data>
+<data key="size">4.0</data>
+<data key="x">79.576645</data>
+<data key="y">-62.379025</data>
+</node>
+<node id="16579">
+<data key="label">165.12274</data>
+<data key="part">0</data>
+<data key="size">4.0</data>
+<data key="x">48.39869</data>
+<data key="y">1.6097813</data>
+</node>
+<node id="16585">
+<data key="label">176.38112</data>
+<data key="part">0</data>
+<data key="size">4.0</data>
+<data key="x">-65.16211</data>
+<data key="y">1.2860439</data>
+</node>
+<node id="16584">
+<data key="label">157.61717</data>
+<data key="part">0</data>
+<data key="size">4.0</data>
+<data key="x">-21.388597</data>
+<data key="y">0.51777756</data>
+</node>
+<node id="16583">
+<data key="label">180.13391</data>
+<data key="part">0</data>
+<data key="size">4.0</data>
+<data key="x">-40.13788</data>
+<data key="y">1.0921842</data>
+</node>
+<node id="16582">
+<data key="label">157.61717</data>
+<data key="part">0</data>
+<data key="size">4.0</data>
+<data key="x">0.60944617</data>
+<data key="y">-0.20122266</data>
+</node>
+<node id="16581">
+<data key="label">161.36996</data>
+<data key="part">0</data>
+<data key="size">4.0</data>
+<data key="x">71.33382</data>
+<data key="y">1.0061145</data>
+</node>
+<node id="16580">
+<data key="label">165.12274</data>
+<data key="part">0</data>
+<data key="size">4.0</data>
+<data key="x">20.330013</data>
+<data key="y">1.1920929E-7</data>
+</node>
+<node id="16576">
+<data key="label">705.5245</data>
+<data key="part">1</data>
+<data key="size">4.0</data>
+<data key="x">36.48134</data>
+<data key="y">-63.988808</data>
+</node>
+<node id="16577">
+<data key="label">683.00775</data>
+<data key="part">1</data>
+<data key="size">4.0</data>
+<data key="x">59.08413</data>
+<data key="y">-62.792973</data>
+</node>
+<node id="16574">
+<data key="label">698.01886</data>
+<data key="part">1</data>
+<data key="size">4.0</data>
+<data key="x">-15.259798</data>
+<data key="y">-64.232086</data>
+</node>
+<node id="16575">
+<data key="label">698.01886</data>
+<data key="part">1</data>
+<data key="size">4.0</data>
+<data key="x">10.344739</data>
+<data key="y">-62.03623</data>
+</node>
+<node id="16572">
+<data key="label">694.2661</data>
+<data key="part">1</data>
+<data key="size">4.0</data>
+<data key="x">-85.6304</data>
+<data key="y">-63.873474</data>
+</node>
+<node id="16573">
+<data key="label">690.5133</data>
+<data key="part">1</data>
+<data key="size">4.0</data>
+<data key="x">-49.07719</data>
+<data key="y">-63.87347</data>
+</node>
+<edge source="16578" target="16581">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16578" target="16580">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16579" target="16576">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16585" target="16572">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16585" target="16573">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16584" target="16574">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16584" target="16575">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16584" target="16573">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16583" target="16574">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16583" target="16573">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16582" target="16574">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16581" target="16577">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16580" target="16576">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+<edge source="16580" target="16575">
+<data key="edgelabel">1.0</data>
+<data key="weight">1.0</data>
+</edge>
+</graph>
+</graphml>

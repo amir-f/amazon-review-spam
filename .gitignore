@@ -1,0 +1,7 @@
+*.pyc
+.idea/
+io.bak/
+io/
+img/
+Gephi/
+Rev.csv
