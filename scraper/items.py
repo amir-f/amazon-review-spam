@@ -2,66 +2,71 @@
 #
 # See documentation in:
 # http://doc.scrapy.org/topics/items.html
-
+from scrapy.contrib.loader.processor import Compose, MapCompose, TakeFirst
 from scrapy.item import Item, Field
+from scraper.utils import only_elem, only_elem_or_default, filter_empty
 
-# TODO comment count
+
+def remove_comma(s):
+    if isinstance(s, unicode) or isinstance(s, str):
+        return s.replace(',', '')
+
 
 class Member(Item):
     id = Field()
-    fullname = Field()
-    location = Field()
-    isRealName = Field()
+    fullname = Field(input_processor=Compose(only_elem, unicode.strip))
+    location = Field(input_processor=Compose(only_elem_or_default, unicode.strip))
+    badges = Field(input_processor=MapCompose(unicode.strip, unicode.upper))
+    ranking = Field(input_processor=Compose(only_elem, unicode.strip, remove_comma, int))
+    helpfulStat = Field(input_processor=MapCompose(int))
+    reviewStat = Field(input_processor=lambda v: v if isinstance(v, int) else Compose(only_elem, unicode.strip, remove_comma, int)(v))
 
     @property
     def key(self):
         return self._values['id']
 
-    def updateItem(self, newItem):
-        missingKeys = [k for k in set(self.keys()) & (set(newItem.keys())) if self[k] is None and newItem[k] is not None]
-        success = len(missingKeys) > 0
-        for k in missingKeys:
-            self[k] = newItem[k]
-
-        return len(missingKeys) > 0
+    @property
+    def export_filename(self):
+        return 'member'
 
 
 class Product(Item):
     id = Field()
-    name = Field()
-    price = Field()
-    avail = Field()
+    name = Field(input_processor=Compose(only_elem, unicode.strip))
+    price = Field(input_processor=Compose(TakeFirst(), float))
     cat = Field()
+    avgStars = Field(input_processor=Compose(only_elem, float))
+    nReviews = Field(input_processor=Compose(only_elem, int))
+    salesRank = Field(input_processor=Compose(unicode.strip, remove_comma, int))
+    subCatRank = Field(input_processor=Compose(only_elem_or_default, int))
+    subCat = Field(input_processor=Compose(only_elem_or_default, unicode.strip))
+
+    @property
+    def export_filename(self):
+        return 'product'
 
     @property
     def key(self):
         return self._values['id']
 
-    def updateItem(self, newItem):
-        missingKeys = [k for k in set(self.keys()) & (set(newItem.keys())) if self[k] is None and newItem[k] is not None]
-        for k in missingKeys:
-            self[k] = newItem[k]
-
-        return len(missingKeys) > 0
-
 
 class Review(Item):
+    id = Field(input_processor=Compose(only_elem))
     productId = Field()
     memberId = Field()
-    helpful = Field()
-    starRating = Field()
-    title = Field()
-    date = Field()
-    verifiedPurchase = Field()
-    reviewTxt = Field()
+    helpful = Field(input_processor=MapCompose(int))
+    starRating = Field(input_processor=Compose(only_elem, float))
+    title = Field(input_processor=Compose(only_elem_or_default, unicode.strip))
+    date = Field(input_processor=Compose(only_elem_or_default, unicode.strip))
+    verifiedPurchase = Field(input_processor=Compose(bool))
+    reviewTxt = Field(input_processor=Compose(MapCompose(unicode.strip), filter_empty, lambda vs: ' '.join(vs)))
+    nComments = Field()
+    vine = Field(input_processor=Compose(bool))
 
     @property
     def key(self):
-        return self._values['productId'], self._values['memberId']
+        return self._values['id']
 
-    def updateItem(self, newItem):
-        missingKeys = [k for k in set(self.keys()) & set(newItem.keys()) if self[k] is None and newItem[k] is not None]
-        success = len(missingKeys) > 0
-        for k in missingKeys:
-            self[k] = newItem[k]
-        return len(missingKeys) > 0
+    @property
+    def export_filename(self):
+        return 'review'
