@@ -225,6 +225,9 @@ def analysis2(members, prods, graph):
     return bipartite.clustering(graph, members)
 
 
+WINDOW = 60 * 60 * 24 * 7
+
+
 def m_projection(graph_orig, members, prods):
     logging.info('Projecting the graph on members')
 
@@ -233,7 +236,6 @@ def m_projection(graph_orig, members, prods):
     graph.remove_edges_from([e for e in graph.edges(data=True) if e[2]['starRating'] < 4])
     assert set(graph) == (set(members) | set(prods))
 
-    WINDOW = 60 * 60 * 24 * 3
     mg = nx.Graph()
     mg.add_nodes_from(members)
 
@@ -277,7 +279,6 @@ def p_projection(graph_orig, members, prods):
     graph.remove_edges_from([e for e in graph.edges(data=True) if e[2]['starRating'] < 4])
     assert set(graph) == (set(members) | set(prods))
 
-    WINDOW = 60 * 60 * 24 * 3
     pg = nx.Graph()
     pg.add_nodes_from(prods)
 

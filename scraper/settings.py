@@ -24,7 +24,7 @@ DATA_SET = 'same_cat'
 DATA_SET_DIR = path.join(PROJECT_PATH, 'io', DATA_SET)
 
 # Scheduler
-DOWNLOAD_DELAY = 0.2
+#DOWNLOAD_DELAY = 0.2
 SCHEDULER_DISK_QUEUE = 'scrapy.squeue.PickleFifoDiskQueue'
 SCHEDULER_MEMORY_QUEUE = 'scrapy.squeue.FifoMemoryQueue'
 
@@ -36,9 +36,10 @@ SPIDER_MIDDLEWARES = {
     'scraper.middlewares.AmazonDepthMiddleware': 901,
     'scraper.middlewares.AmazonMaxPageMiddleware': 902,
 }
-SPIDER_SEED_FILENAME = path.join(DATA_SET_DIR, 'seed.csv')
-SPIDER_PROD_MAX_NPAGE = 50
-SPIDER_MEMBER_MAX_NPAGE = 50
+SPIDER_SEED_FILENAME = path.join(DATA_SET_DIR, 'bad_nodes.csv')
+SPIDER_PROD_MAX_NPAGE = 30
+SPIDER_MEMBER_MAX_NPAGE = 30
+SPIDER_MAX_SAME_CAT = 5
 
 # Depth
 DEPTH_LIMIT = 2

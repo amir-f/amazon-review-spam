@@ -3,6 +3,8 @@
 io.bak/
 io/
 img/
-Gephi/
+crawl_persistence/
 Rev.csv
 libpeerconnection.log
+*.gexf
+*.graphml

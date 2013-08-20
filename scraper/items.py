@@ -32,13 +32,13 @@ class Member(Item):
 
 class Product(Item):
     id = Field()
-    name = Field(input_processor=Compose(only_elem, unicode.strip))
-    price = Field(input_processor=Compose(TakeFirst(), float))
+    name = Field(input_processor=Compose(TakeFirst(), unicode.strip))
+    price = Field(input_processor=Compose(TakeFirst(), unicode.strip, remove_comma, float))
     cat = Field()
     avgStars = Field(input_processor=Compose(only_elem, float))
-    nReviews = Field(input_processor=Compose(only_elem, int))
+    nReviews = Field(input_processor=Compose(only_elem, unicode.strip, remove_comma, int))
     salesRank = Field(input_processor=Compose(unicode.strip, remove_comma, int))
-    subCatRank = Field(input_processor=Compose(only_elem_or_default, int))
+    subCatRank = Field(input_processor=Compose(only_elem_or_default, unicode.strip, remove_comma, int))
     subCat = Field(input_processor=Compose(only_elem_or_default, unicode.strip))
 
     @property

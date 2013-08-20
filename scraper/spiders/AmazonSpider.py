@@ -17,7 +17,7 @@ from lxml import etree
 
 review_id_re = r'(?<=review/)\w+(?=/)'
 number_digit_grpd = r'\d+(?:,\d+)*'
-cat_name_re = r'\w+(?:\s+(?:\w+|\&))+'
+cat_name_re = r'\w+(?:\s+(?:\w+|\&))*'
 sales_rank_re = r'#(%s)\s+(?:\w+\s+)?in\s+(%s)' % (number_digit_grpd, cat_name_re)
 price_re = r'\$(%s\.\d\d)' % number_digit_grpd
 star_rating_re = r'(\d+(?:\.\d+)?)\s+out\s+of'
@@ -86,12 +86,17 @@ class AmazonSpider(BaseSpider):
         log.msg('Parsing products of the same category as: %s' % response.meta['id'], level=log.INFO, spider=self)
         # from scrapy.shell import inspect_response
         # inspect_response(response)
+        settings = self.crawler.settings
         hxs = HtmlXPathSelector(response)
 
         product_ids = hxs.select('//body//div[@id="zg_centerListWrapper"]//a[img]//@href').re(product_url_id_re)
+        n_same_cat = 0
         for product_id in product_ids:
-            yield self._rev_page_request(str(product_id), PROD_TYPE)
-
+           yield self._rev_page_request(str(product_id), PROD_TYPE)
+           n_same_cat += 1
+           if n_same_cat > settings['SPIDER_MAX_SAME_CAT']:
+                break
+  
     def parse_product_details_page(self, response):
         """
         Extracts information from a product page and yields its review page and pages of products in the same category
@@ -104,7 +109,9 @@ class AmazonSpider(BaseSpider):
 
         # yield product details
         name = hxs.select('//body//span[@id="btAsinTitle"]/text()').extract() or \
-                hxs.select('//body//div[@id="title_feature_div"]//h1/text()').extract()
+               hxs.select('//body//div[@id="title_feature_div"]//h1/text()').extract()
+        if not name:
+            name = hxs.select('//head/title/text()').re(r'(?:Amazon:\s+)?([^:]+)')
         price = hxs.select('//body//span[@id="actualPriceValue"]//text()').re(price_re) or \
                 hxs.select('//body//div[@id="price"]//span[contains(@class, "a-color-price")]/text()').re(price_re) or \
                 hxs.select('//body//div[@id="priceBlock"]//span[@class="priceLarge"]/text()').re(price_re)
@@ -114,12 +121,13 @@ class AmazonSpider(BaseSpider):
             avg_stars = reviews_t.select('./span[contains(@title, "star")]/@title').re(star_rating_re)
             n_reviews = reviews_t.select('./a[contains(@href, "product-reviews")]/text()').re(number_digit_grpd)
         else:
-            reviews_t = hxs.select('//body//*[self::div[@class="buying"] or self::form[@id="handleBuy"]]//span[@class="crAvgStars"]')
+            reviews_t = hxs.select('(//body//*[self::div[@class="buying"] or self::form[@id="handleBuy"]]//span[@class="crAvgStars"])[1]')
             if reviews_t:
                 avg_stars = reviews_t.select('.//span[contains(@title, "star")]/@title').re(star_rating_re)
                 n_reviews = reviews_t.select('./a[contains(@href, "product-reviews")]/text()').re(number_digit_grpd)
 
-        sales_rank, cat, best_sellers_href, sub_cat_rank, sub_cat, sub_cat_href = [None]*6
+        sales_rank, cat, sub_cat_rank, sub_cat = [None]*4
+        best_sellers_href, sub_cat_href = [], []
         parent_node = hxs.select('//body//li[@id="SalesRank"]')
         if parent_node:
             sales_rank, cat = parent_node.select('.//text()').re(sales_rank_re) or [None]*2
@@ -142,7 +150,7 @@ class AmazonSpider(BaseSpider):
         if not parent_node:
             parent_node = hxs.select('//body//tr[@id="SalesRank"]')
             if parent_node:
-                sales_rank, cat = parent_node.select('.//text()').re(sales_rank_re)
+                sales_rank, cat = parent_node.select('.//text()').re(sales_rank_re) or [None]*2
                 best_sellers_href = parent_node.select('.//a[contains(lower-case(text()), "see top") and (contains(@href, "/best-sellers") or contains(@href, "/bestsellers"))]/@href').extract()
                 sub_cat_node = parent_node.select('.//li[@class="zg_hrsr_item"][1]')
                 if sub_cat_node:
