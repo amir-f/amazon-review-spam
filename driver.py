@@ -220,15 +220,15 @@ def exhaustive_ll(N, nparts, parallel=True):
 
 def test_real_graph(nparts):
     logging.info('Reading author collab graph')
-    author_graph = nx.read_graphml('/home/amir/az/io/spam/spam_mgraph_augmented.graphml')
+    author_graph = nx.read_graphml('/home/amir/az/io/spam/mgraph2.gexf')
     author_graph.name = 'author graph'
     logging.info('Reading the full author product graph')
     full_graph = nx.read_graphml('/home/amir/az/io/spam/spam_graph.graphml')
     full_graph.name = 'full graph'
 
     proper_author_graph = author_graph.subgraph([a for a in author_graph if 'revLen' in author_graph.node[a]
-                                                and 'hlpful_fav_unfav' in author_graph.node[a]
-                                                and 'vrf_prchs_fav_unfav' in author_graph.node[a]])
+                                                                            and 'hlpful_fav_unfav' in author_graph.node[a]
+                                                                            and 'vrf_prchs_fav_unfav' in author_graph.node[a]])
     # features = {'revLen': 0.0, 'hlpful_fav_unfav': False, 'vrf_prchs_fav_unfav': False}
     # for a in author_graph:
     #     for feat, def_val in features.items():

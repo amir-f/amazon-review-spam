@@ -36,7 +36,7 @@ SPIDER_MIDDLEWARES = {
     'scraper.middlewares.AmazonDepthMiddleware': 901,
     'scraper.middlewares.AmazonMaxPageMiddleware': 902,
 }
-SPIDER_SEED_FILENAME = path.join(DATA_SET_DIR, 'bad_nodes.csv')
+SPIDER_SEED_FILENAME = path.join(DATA_SET_DIR, 'seed.csv')
 SPIDER_PROD_MAX_NPAGE = 30
 SPIDER_MEMBER_MAX_NPAGE = 30
 SPIDER_MAX_SAME_CAT = 5

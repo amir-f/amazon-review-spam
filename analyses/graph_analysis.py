@@ -4,6 +4,8 @@ from networkx.algorithms import bipartite
 import re
 import logging
 import itertools
+from scipy.integrate import dblquad
+from scipy.stats import gaussian_kde
 
 __author__ = 'Amir'
 
@@ -61,21 +63,35 @@ def bipartite_analysis(members, prods, graph):
 
 
 WINDOW = 60 * 60 * 24 * 7
+SIGNF_LEVEL = 0.05
+EPS = 1e-6
+MIN_TS_LEN = 50
 
 
-def m_projection(graph_orig, members, prods):
+def m_projection(graph_orig, members, prods, full_graph):
     logging.info('Projecting the graph on members')
 
-    graph = graph_orig.copy()
+    graph = graph_orig.subgraph(graph_orig.nodes())
     #considering only favorable edges
-    graph.remove_edges_from([e for e in graph.edges(data=True) if e[2]['starRating'] < 4])
+    graph.remove_edges_from([e for e in graph.edges(data=True) if e[2]['starRating'] >= 4])
     assert set(graph) == (set(members) | set(prods))
 
     mg = nx.Graph()
     mg.add_nodes_from(members)
 
+    prods_len = float(len(prods))
+    last_pctg = 0
     prod_names = dict()
-    for p in prods:
+    for p_i, p in enumerate(prods):
+        # first check whether two favorable reviews within a WINDOW is significant enough (p-value < 0.5)
+        ts = [e['date'] for e in full_graph[p].values()]
+        # In order for gkde to work, there should be more than one point value
+        if len(ts) >= MIN_TS_LEN and min(ts) < max(ts):
+            gkde = gaussian_kde(ts)
+            p_value, err = dblquad(lambda u, v: gkde(u)*gkde(v), min(ts) - WINDOW/2.0, max(ts) + WINDOW/2.0,
+                                   lambda v: v - WINDOW/2.0, lambda v: v + WINDOW/2.0)
+            if p_value - EPS >= SIGNF_LEVEL and err < EPS:
+                continue
         for m1, m2 in itertools.combinations(nx.neighbors(graph, p), 2):
             # order m1,m2 so the key (m1,m2) for prod_names works regardless of edge direction
             if m1 > m2:
@@ -89,13 +105,21 @@ def m_projection(graph_orig, members, prods):
                     prod_names[(m1, m2)] = []
                 prod_names[(m1, m2)].append(p)
                 mg.add_edge(m1, m2, weight=c + 1)
+        pctg = int(p_i/prods_len*100)
+        if pctg % 10 == 0 and pctg > last_pctg:
+            last_pctg = pctg
+            logging.info('%d%% Done' % pctg)
 
-    logging.debug('Normalizing edge weights: meet/min')
+    logging.debug('Normalizing edge weights: meet/max')
     for e in mg.edges():
         u, v = e
-        norm = min(len(nx.neighbors(graph, u)), len(nx.neighbors(graph, v)))
-        mg.add_edge(u, v, weight=float(mg[u][v]['weight']) / float(norm), denom=norm)
-        # remove isolated nodes
+        if mg[u][v]['weight'] <= 1:
+            mg.remove_edge(u, v)
+            del prod_names[(min(u, v), max(u, v))]
+        else:
+            norm = max(len(nx.neighbors(graph, u)), len(nx.neighbors(graph, v)))
+            mg.add_edge(u, v, weight=float(mg[u][v]['weight']) / norm, denom=norm)
+    # remove isolated nodes
     degrees = mg.degree()
     mg.remove_nodes_from([n for n in mg if degrees[n] == 0])
     # adding original graph metadata on nodes
