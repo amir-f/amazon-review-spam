@@ -1,6 +1,6 @@
 __author__ = 'Amir'
 
-from hardEM_gurobi import hard_EM
+from hardEM_gurobi import HardEM
 import networkx as nx
 import logging
 from multiprocessing import Pool
@@ -11,7 +11,7 @@ import pydevd
 from numpy.random import dirichlet, normal, binomial, multinomial
 from random import randint
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s:%(levelname)s:%(message)s', datefmt='%H:%M:%S')
+logging.basicConfig(level=logging.WARN, format='%(asctime)s:%(levelname)s:%(message)s', datefmt='%H:%M:%S')
 
 
 def test_graph1():
@@ -57,36 +57,38 @@ def gen_partition(n, m):
     Generates all possible partitioning of n elements into m partitions. The size of the output will be
     stirling number of second kind of {n, m}
     """
-    prt_list = []
     prt = np.zeros(n, dtype=np.int8)
     if m <= n:
-        _gen_partition(n, m, prt, prt_list)
-    return prt_list
+        return _gen_partition(n, m, prt)
+    else:
+        return []
 
 
-def _gen_partition(n, m, prt, prt_list):
+def _gen_partition(n, m, prt):
     """
     Given the pre allocated partition array and result list,
     generates all possible partitioning of n elements into m partitions
     """
     if n == m:
         prt[:n] = range(n)
-        prt_list.append(tuple(prt))
+        yield tuple(prt)
         return
     if m == 1:
         prt[:n] = np.zeros(n)
-        prt_list.append(tuple(prt))
+        yield tuple(prt)
         return
     # last element on its own partition
     prt[n - 1] = m - 1
-    _gen_partition(n - 1, m - 1, prt, prt_list)
+    for p in _gen_partition(n - 1, m - 1, prt):
+        yield p
     # last element is  in any of the m partitions
     for i in range(m):
         prt[n - 1] = i
-        _gen_partition(n - 1, m, prt, prt_list)
+        for p in _gen_partition(n - 1, m, prt):
+            yield p
 
 
-def gen_test_graph(N):
+def gen_synthetic_bicluster_graph(N):
     logging.info('Generating test graph')
     graph = nx.Graph(name='author graph')
     p_h = 0.8
@@ -122,16 +124,17 @@ def gen_test_graph(N):
     return graph, author_prod_map
 
 
-def create_synthetic_graph(N, nc):
+def gen_synthetic_graph(N, nc):
     graph = nx.Graph(name='synthezied author graph')
-    cluster_sizes = [int(cs) for cs in dirichlet([7] * nc) * N]
+    cluster_sizes = [int(round(cs)) for cs in dirichlet([7] * nc) * N]
     ph_s = dirichlet([1] * nc)
     pr_s = dirichlet([1] * nc)
     pv_s = dirichlet([1] * nc)
     SIGMA = 0.6
-    TAU = 0.99
+    TAU = 0.9
+    AVG_PER_CLASS_PROD = 5
     mus = normal(loc=5.5, scale=3, size=nc)
-    all_products = range(nc * 50)
+    all_products = range(nc * AVG_PER_CLASS_PROD)
     pi_s = []
     for ci in range(nc):
         pi_s.append(dirichlet([0.5] * len(all_products)))
@@ -154,68 +157,96 @@ def create_synthetic_graph(N, nc):
             if binomial(1, 1 - TAU):
                 graph.add_edge(a, b, weight=np.clip(normal(0.5, scale=0.25), 0, 1), denom=5)
     # keep only the largest component
-    components = nx.connected_components(graph)
-    largest_component_i = np.argmax([len(c) for c in components])
-    largest_component = set(components[largest_component_i])
-    graph.remove_nodes_from([n for n in graph if n not in largest_component])
+    # components = nx.connected_components(graph)
+    # largest_component_i = np.argmax([len(c) for c in components])
+    # largest_component = set(components[largest_component_i])
+    # graph.remove_nodes_from([n for n in graph if n not in largest_component])
     # generate author_prod_map
     for n in graph:
         ci = graph.node[n]['acluster']
         nprods = randint(1, len(all_products)/2)
         author_prod_map[n] = list(np.nonzero(multinomial(nprods, pi_s[ci]))[0])
 
-    return graph, author_prod_map
+    return graph, author_prod_map, cluster_sizes
 
 
 def test_hard_EM(N, nparts, write_labeled_graph=True, parallel=True):
-    graph, author_prod_map = gen_test_graph(N)
-    ll, partition = hard_EM.run_EM(author_graph=graph, author_product_map=author_prod_map, nparts=nparts, parallel=parallel)
+    graph, author_prod_map, _ = gen_synthetic_graph(N, nparts)
+    ll, partition = HardEM.run_EM(author_graph=graph, author_product_map=author_prod_map, nparts=nparts, parallel=parallel)
 
     print 'best loglikelihood: %s' % ll
     print partition.values()
     for n in partition:
         graph.node[n]['cLabel'] = int(partition[n])
     if write_labeled_graph:
-        nx.write_graphml(graph, '/home/amir/az/io/spam/synthetic_graph_sage_labeled.graphml')
+        nx.write_graphml(graph, '/home/amir/amazon-spam-review/io/synthetic_graph_labeled.graphml')
+    return graph
+
+
+def rand_index(prt, ref_prt):
+    n = len(prt)
+    assert n == len(ref_prt)
+    t = 0       # No. correct clustering
+    for i1, i2 in itertools.combinations(range(len(prt)), 2):
+        if (prt[i1] == prt[i2] and ref_prt[i1] == ref_prt[i2]) or (prt[i1] != prt[i2] and ref_prt[i1] != ref_prt[i2]):
+            t += 1
+    return float(t) / (n*(n-1)/2)
+
+
+def stirling2(n, k):
+    if n == k:
+        return 1
+    if k == 1:
+        return 1
+    if k == 0:
+        return 0
+    if k > n:
+        return 0
+    return k*stirling2(n-1, k) + stirling2(n-1, k-1)
 
 
 def em_ll_map(prt):
-    em = hard_EM(author_graph=ex_ll_graph, author_product_map=ex_ll_author_prod_map, nparts=ex_ll_nparts, init_partition=prt)
-    return prt, em.log_likelihood()
+    em = HardEM(author_graph=ex_ll_graph, author_product_map=ex_ll_author_prod_map, nparts=ex_ll_nparts, init_partition=prt)
+    return prt, em.log_likelihood(), rand_index(prt, ex_ll_ref_prt)
 
 
 def exhaustive_ll(N, nparts, parallel=True):
-    global ex_ll_graph, ex_ll_nparts, ex_ll_author_prod_map
-    ex_ll_graph, ex_ll_author_prod_map = gen_test_graph(N)
+    global ex_ll_graph, ex_ll_nparts, ex_ll_author_prod_map, ex_ll_ref_prt
+    ex_ll_graph, ex_ll_author_prod_map, cluster_sizes = gen_synthetic_graph(N, nparts)
+    N = sum(cluster_sizes)      # sum of cluster sizes is close to N but does not always match
     ex_ll_nparts = nparts
+    ex_ll_graph, ex_ll_author_prod_map = HardEM._preprocess_graph_and_map(ex_ll_graph, ex_ll_author_prod_map)
+    # reference partitioning
+    ex_ll_ref_prt = []
+    for i in range(len(cluster_sizes)):
+        ex_ll_ref_prt.extend([i]*cluster_sizes[i])
+    ex_ll_ref_prt = tuple(ex_ll_ref_prt)
     # all possible partitioning of at most `nparts` partitions
-    partitions = []
-    for nparts_i in range(1, nparts + 1):
-        partitions.extend(gen_partition(N, nparts_i))
-    logging.info('Processing %d partitions' % len(partitions))
+    partitions = itertools.chain(*[gen_partition(N, nparts_i) for nparts_i in range(1, nparts + 1)])
+    logging.info('Processing %d partitions' % sum(stirling2(N, nparts_i) for nparts_i in range(1, nparts + 1)))
     if parallel:
         p = Pool()
-        v = p.map(em_ll_map, partitions)
+        v = p.imap(em_ll_map, partitions)
         p.close(); p.join()
     else:
-        v = map(em_ll_map, partitions)
+        v = itertools.imap(em_ll_map, partitions)
+    v = list(v)     # since v is a generator, keeps them in a list so reading from it won't consume it
     # find the logl for the presumed correct partitioning
-    ref_prt = tuple([0] * (N//2) + [1] * (N - N//2))
     ref_ll = 0
     for vv in v:
-        if vv[0] == ref_prt:
+        if vv[0] == ex_ll_ref_prt:
             ref_ll = vv[1]
             break
     else:
         logging.error('The correct partitioning was not found')
     # keep only one from set of permutations with the same loglikelihood
-    v_dict = {ll: prt for prt, ll in v}
-    v = v_dict.items()
-    v.sort(key=lambda tup: tup[0], reverse=True)
-    for i in range(0, min(10, len(v))):
-        print '#%d\t%s' % (i, v[i])
-    print '##\t%s' % ((ref_ll, ref_prt),)
-    return v
+    # v_dict = {ll: prt for prt, ll in v}
+    # v = v_dict.items()
+    # v.sort(key=lambda tup: tup[0], reverse=True)
+    # for i in range(0, min(10, len(v))):
+    #     print '#%d\t%s' % (i, v[i])
+    # print '##\t%s' % ((ref_ll, ex_ll_ref_prt),)
+    return v, cluster_sizes, ex_ll_graph
 
 
 def test_real_graph(nparts):
@@ -246,14 +277,16 @@ def test_real_graph(nparts):
         author_product_mapping[a] = [p for p in full_graph[a] if 'starRating' in full_graph[a][p] and
                                                                  full_graph[a][p]['starRating'] >= 4]
     logging.debug('Running EM')
-    ll, partition = hard_EM.run_EM(proper_author_graph, author_product_mapping, nparts=nparts, parallel=True)
+    ll, partition = HardEM.run_EM(proper_author_graph, author_product_mapping, nparts=nparts, parallel=True)
     print 'best loglikelihood: %s' % ll
     for n in partition:
         author_graph.node[n]['cLabel'] = int(partition[n])
     nx.write_gexf(author_graph, '/home/amir/az/io/spam/spam_graph_mgraph_sage_labeled.gexf')
 
+
 if __name__ == '__main__':
-    # pydevd.settrace('192.168.11.227', port=4187, stdoutToServer=True, stderrToServer=True)
-    # exhaustive_ll(16, 2, True)
+    # pydevd.settrace('192.168.11.212', port=4187, stdoutToServer=True, stderrToServer=True)
+    exhaustive_ll(10, 2, True)
     # test_hard_EM(50, 10, write_labeled_graph=False, parallel=False)
-    test_real_graph(nparts=8)
+    # test_real_graph(nparts=8)
+    # test_real_graph_2()

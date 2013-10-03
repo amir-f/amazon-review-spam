@@ -12,39 +12,179 @@ logging.basicConfig(level=logging.INFO, format='%(process)d\t%(asctime)s:%(level
 
 EPS = 1e-12
 log_2pi = log(2 * pi)
+ORIG_LABEL = 'orig_label'
 
 
-class hard_EM:
+class FC:
+    """
+    Factor
+    """
+    def __init__(self, name):
+        self.name = name
+        self.rand_init()
+
+    def rand_init(self):
+        pass
+
+    def __hash__(self):
+        return self.name
+
+
+class BinaryFC(FC):
+    def __init__(self, name, author_graph):
+        self.author_graph = author_graph
+        FC.__init__(self, name)
+
+    def rand_init(self):
+        p = np.clip(dirichlet([1]*2)[0], EPS, 1 - EPS)
+        self.log_val = np.log(p)
+        self.log_1_val = np.log(1 - p)
+
+    def log_likelihood(self, a):
+        if self.author_graph.node[a][self.name]:
+            return self.log_val
+        else:
+            return self.log_1_val
+
+    def m_step(self, author_ids, em):
+        if not author_ids:
+            self.log_val = self.log_1_val = -1
+            return
+        author_graph = em.author_graph
+        cnt = 0
+        for a in author_ids:
+            if author_graph.node[a][self.name]:
+                cnt += 1
+        v = np.clip(float(cnt) / len(author_ids), EPS, 1 - EPS)
+        self.log_val = np.log(v)
+        self.log_1_val = np.log(1 - v)
+
+
+class NormFC(FC):
+    def __init__(self, name, author_graph, mu_range_prior):
+        self.author_graph = author_graph
+        self.mu_range = mu_range_prior
+        FC.__init__(self, name)
+
+    def rand_init(self):
+        self.mu = random.uniform(*self.mu_range)
+        self.sigma2 = HardEM.CLUSTER_SIGMA
+
+    def log_likelihood(self, a):
+        return -((self.author_graph.node[a][self.name] - self.mu) ** 2) / (2 * self.sigma2 + EPS) - (log_2pi + log(self.sigma2)) / 2.0
+
+    def m_step(self, author_ids, em):
+        if not author_ids:
+            self.rand_init()
+            return
+        self.mu, self.M2 = 0, 0
+        freq = 0
+        for a in author_ids:
+            freq += 1
+            author = em.author_graph.node[a]
+            delta = author['revLen'] - self.mu
+            self.mu += delta / freq
+            self.M2 += delta * (author['revLen'] - self.mu)     # old_delta * new_delta
+        self.sigma2 = HardEM.CLUSTER_SIGMA  # self.M2 / (len(author_ids) - 1 + EPS) + EPS
+
+
+class ProdsFC(FC):
+    def __init__(self, name, author_graph, author_product_map):
+        assert set(author_product_map) == set(range(len(author_product_map)))
+        self.author_product_map = author_product_map
+        all_products = set.union(*[set(self.author_product_map[a]) for a in author_graph])
+        self.n_all_products = len(all_products)
+        FC.__init__(self, name)
+
+    def rand_init(self):
+        self.log_pr_prod = np.log(dirichlet([HardEM.PROD_PRIOR_ALPHA] * self.n_all_products))  # near uniform initialization
+
+    def log_likelihood(self, a):
+        if len(self.author_product_map[a]):
+            return np.sum(self.log_pr_prod[self.author_product_map[a]])
+        else: return 0
+
+    def m_step(self, authors_ids, _):
+        prod_freq = np.zeros(self.n_all_products)
+        for a in authors_ids:
+            if len(self.author_product_map[a]):
+                increment = np.zeros(self.n_all_products)
+                increment[self.author_product_map[a]] = 1
+                prod_freq += increment
+        prod_freq += EPS    # to avoid log of zero
+        s = np.sum(prod_freq)
+        self.log_pr_prod = np.log(prod_freq / s)
+
+
+class MembsFC(FC):
+    def __init__(self, name, author_graph):
+        self.n_all_membs = len(author_graph)
+        self.author_graph = author_graph
+        FC.__init__(self, name)
+
+    def rand_init(self):
+        self.log_pr_prod = np.log(dirichlet([HardEM.PROD_PRIOR_ALPHA] * self.n_all_membs))  # near uniform initialization
+
+    def log_likelihood(self, a):
+        return np.sum(self.log_pr_prod[self.author_graph.neighbors(a)])
+
+    def m_step(self, authors_ids, _):
+        memb_freq = np.zeros(self.n_all_membs)
+        for a in authors_ids:
+            increment = np.zeros(self.n_all_membs)
+            increment[self.author_graph.neighbors(a)] = 1
+            memb_freq += increment
+        memb_freq += EPS    # to avoid log of zero
+        s = np.sum(memb_freq)
+        self.log_pr_prod = np.log(memb_freq / s)
+
+
+class ClusterPrior:
+    def __init__(self, v):
+        self.log_v = np.log(v)
+
+    def log_likelihood(self, _):
+        return self.log_v
+
+    def m_step(self, partition_authors, em):
+        v = np.clip(float(len(partition_authors)) / len(em.author_graph), EPS, 1)
+        self.log_v = np.log(v)
+
+
+class HardEM:
     # class parameters and their default values
-    EM_RESTARTS = 8
+    EM_RESTARTS = 16
     EM_ITERATION_LIMIT = 30
     LP_TIME_LIMIT = 60
     LP_ITERATION_LIMIT = 50 * (10 ** 3)
     LP_VERBOSITY = 2
-    DEF_NPARTS = 5
-    DEF_TAU = 0.7
+    DFLT_NPARTS = 5
+    DEFLT_TAU = 0.7
     CLUSTER_SIGMA = 0.6
-    DIRICH_PARAM = 100
-    DENOM_THRES = 3
+    PROD_PRIOR_ALPHA = 10
+    CLUSTER_PRIOR_ALPHA = 10
+    DENOM_THRESH = 3
 
-    def __init__(self, author_graph, author_product_map, TAU=DEF_TAU,  nparts=DEF_NPARTS, init_partition=None):
+    def __init__(self, author_graph, author_product_map, nparts=DFLT_NPARTS, init_partition=None, TAU=DEFLT_TAU, parallel=False):
         self.parts = range(nparts)
         self.TAU = TAU
-        # assert numerical values for node ids
-        assert set(author_graph) == set(range(len(author_graph)))
-        assert set(author_product_map) == set(range(len(author_product_map)))
         self.author_graph = author_graph
         self.author_product_map = author_product_map
-        all_products = set.union(*[set(self.author_product_map[a]) for a in author_graph])
-        self.n_all_products = len(all_products)
+        # if run in parallel set the random seed to pids. Otherwise, all instances will have same seed based on time
+        if parallel:
+            random.seed(os.getpid())
+            np.random.seed(os.getpid())
+        # assert numerical values for node ids
+        assert set(author_graph) == set(range(len(author_graph)))
         self._lp_inited = False
         # init hidden vars
         if init_partition:
-            self.partition = init_partition
+            self.partition = np.array(init_partition, dtype=np.int8)
+            self.rand_init_param()
             self.m_step()   # so thetas have value
         else:
             self.partition = np.zeros(len(self.author_graph), dtype=np.int8)
-            self._rand_init_param()
+            self.rand_init_param()
 
     @staticmethod
     def _relabel_to_int_product_ids(mapping):
@@ -59,29 +199,25 @@ class hard_EM:
             new_map[k] = np.array(new_vs)
         return new_map
 
-    def _rand_init_param(self):
+    def rand_init_param(self):
         logging.debug('Random param with seed: %s' % os.getpid())
-        random.seed(os.getpid())
-        self.theta = [dict() for p in self.parts]
-        for p, prob in enumerate( np.log(dirichlet([10] * len(self.parts))) ):
-            self.theta[p]['logPr'] = prob
+        self.factors = [list() for _ in self.parts]
+        # init cluster prior
+        for p, prob in enumerate(dirichlet([HardEM.CLUSTER_PRIOR_ALPHA] * len(self.parts))):
+            self.factors[p].append(ClusterPrior(prob))
+        # init other singleton potential factors
         for p in self.parts:
-            prH, prR, prV = np.clip([dirichlet([1]*2)[0], dirichlet([1]*2)[0], dirichlet([1]*2)[0]], EPS, 1 - EPS)
-            self.theta[p]['logPrH'] = log(prH)
-            self.theta[p]['log1-PrH'] = log(1 - prH)
-            self.theta[p]['logPrR'] = log(prR)
-            self.theta[p]['log1-PrR'] = log(1 - prR)
-            self.theta[p]['logPrV'] = log(prV)
-            self.theta[p]['log1-PrV'] = log(1 - prV)
-            self.theta[p]['muL'] = random.uniform(0, 6)
-            self.theta[p]['sigma2L'] = hard_EM.CLUSTER_SIGMA  # random.uniform(0, 2)
-            self.theta[p]['PrProd'] = np.log(dirichlet([hard_EM.DIRICH_PARAM] * self.n_all_products))  # near uniform initialization
+            factors = self.factors[p]
+            # factors.append(Binary_FC('isRealName', self.author_graph))
+            # factors.append(Norm_FC('revLen', self.author_graph, (3, 7)))
+            factors.append(ProdsFC('prProds', self.author_graph, self.author_product_map))
+            factors.append(MembsFC('prMembs', self.author_graph))
 
     def _init_LP(self):
         if self._lp_inited:
             return
 
-        logging.info('Init LP')
+        logging.debug('Init LP')
         self.lp = LPModel('estep')
         self.lp.setAttr("modelSense", 1)    # minimzation
 
@@ -119,7 +255,7 @@ class hard_EM:
         # calculate pairwise potentials part of the objective
         # the optimization is to minimize negated log-likelihood = maximize the log-likelihood
         logging.debug('Obj func - pair potentials')
-        s = log(1 - self.TAU) - log(self.TAU)
+        s = np.log(1 - self.TAU) - np.log(self.TAU)
         lpcoeffs, lpvars = [], []
         for a, b in self.author_graph.edges():
             lpcoeffs.append(-self.author_graph[a][b]['weight'] * s)
@@ -127,40 +263,26 @@ class hard_EM:
         self.objF_pair = LinExpr(list(lpcoeffs), list(lpvars))
 
         self._lp_inited = True
-        logging.info('Init LP Done')
+        logging.debug('Init LP Done')
 
     def log_phi(self, a, p):
-        author = self.author_graph.node[a]
-        th = self.theta[p]
-        res = th['logPr']
-        if author['hlpful_fav_unfav']:
-            res += th['logPrH']
-        else:
-            res += th['log1-PrH']
-        if author['isRealName']:
-            res += th['logPrR']
-        else:
-            res += th['log1-PrR']
-        # if author['vrf_prchs_fav_unfav']:
-        #     res += th['logPrV']
-        # else:
-        #     res += th['log1-PrV']
-        res += -((author['revLen'] - th['muL']) ** 2) / (2 * th['sigma2L'] + EPS) - (log_2pi + log(th['sigma2L'])) / 2.0
-        res += np.sum(th['PrProd'][self.author_product_map[a]])
-        return res
+        return sum(factor.log_likelihood(a) for factor in self.factors[p])
 
     def log_likelihood(self):
-        ll = sum(self.log_phi(a, self.partition[a]) for a in self.author_graph.nodes())
-        log_TAU, log_1_TAU = log(self.TAU), log(1 - self.TAU)
+        ll = sum(self.log_phi(a, self.partition[a]) for a in self.author_graph)
+        log_TAU, log_1_TAU = np.log(self.TAU), np.log(1 - self.TAU)
         for a, b in self.author_graph.edges():
             if self.partition[a] == self.partition[b]:
                 ll += self.author_graph[a][b]['weight'] * log_TAU
             else:
                 ll += self.author_graph[a][b]['weight'] * log_1_TAU
+        #for a, b in self.author_graph.edges():
+        #    if self.partition[a] != self.partition[b]:
+        #        ll += self.author_graph[a][b]['weight'] * (log_1_TAU - log_TAU)
         return ll
 
     def e_step(self):
-        logging.info('E-Step')
+        logging.debug('E-Step')
         if not self._lp_inited:
             self._init_LP()
 
@@ -182,58 +304,27 @@ class hard_EM:
         # hard partitions for nodes (authors)
         for a in self.author_graph:
             self.partition[a] = np.argmax([self.alpha[a][p].X for p in self.parts])
-        logging.info('E-Step Done')
+        logging.debug('E-Step Done')
 
     def m_step(self):
-        logging.info('M-Step')
-        stat = {st: [0.0] * len(self.parts) for st in ['freq', 'hlpful', 'realNm', 'vrfprchs', 'muL', 'M2']}
-        stat['prod_freq'] = [np.zeros(self.n_all_products) for p in self.parts]
+        logging.debug('M-Step')
+        # create lists of nodes per cluster/partition
+        partition = [list() for _ in self.parts]
         for a in self.author_graph:
-            p = self.partition[a]
-            author = self.author_graph.node[a]
-            stat['freq'][p] += 1
-            if author['hlpful_fav_unfav']: stat['hlpful'][p] += 1
-            if author['vrf_prchs_fav_unfav']: stat['vrfprchs'][p] += 1
-            if author['isRealName']: stat['realNm'][p] += 1
-            delta = author['revLen'] - stat['muL'][p]
-            stat['muL'][p] += delta / stat['freq'][p]
-            stat['M2'][p] += delta * (author['revLen'] - stat['muL'][p])
-            increment = np.zeros(self.n_all_products)
-            increment[self.author_product_map[a]] = 1
-            stat['prod_freq'][p] += increment
-
-        self.theta = [dict() for p in self.parts]
-        sum_freq = sum(stat['freq'][p] for p in self.parts)
-
+            partition[self.partition[a]].append(a)
+        # run m-step on factors of each cluster
         for p in self.parts:
-            self.theta[p]['logPr'] = log(stat['freq'][p] / (sum_freq + EPS) + EPS)
-            prH = stat['hlpful'][p] / (stat['freq'][p] + EPS)
-            prR = stat['realNm'][p] / (stat['freq'][p] + EPS)
-            prV = stat['vrfprchs'][p] / (stat['freq'][p] + EPS)
-            prH, prR, prV = np.clip([prH, prR, prV], EPS, 1 - EPS)
-            self.theta[p]['logPrH'] = log(prH)
-            self.theta[p]['log1-PrH'] = log(1 - prH)
-            self.theta[p]['logPrR'] = log(prR)
-            self.theta[p]['log1-PrR'] = log(1 - prR)
-            self.theta[p]['logPrV'] = log(prV)
-            self.theta[p]['log1-PrV'] = log(1 - prV)
-            self.theta[p]['muL'] = stat['muL'][p]
-            self.theta[p]['sigma2L'] = hard_EM.CLUSTER_SIGMA  # stat['M2'][st] / (stat['freq'][st] - 1 + EPS) + EPS
-            s = sum(stat['prod_freq'][p])
-            if s > 0:
-                stat['prod_freq'][p] += EPS    # to avoid log of zero
-                self.theta[p]['PrProd'] = np.log(stat['prod_freq'][p] / sum(stat['prod_freq'][p]))
-            else:   # no frequencies, so set the distribution to near uniform
-                self.theta[p]['PrProd'] = np.log(dirichlet([hard_EM.DIRICH_PARAM] * self.n_all_products))
-
-        logging.info('M-Step Done')
+            for factor in self.factors[p]:
+                factor.m_step(partition[p], self)
+        logging.debug('M-Step Done')
 
     def iterate(self, MAX_ITER=20):
-        past_ll, past_partition = -float('inf'), -1 * np.ones(len(self.partition))
+        past_ll, past_partition = -float('inf'), -1 * np.ones(self.partition.size)
         ll, partition = self.log_likelihood(), self.partition.copy()
-        EPS = 1e-3
+        logging.info('init \tlog_l: %s' % ll)
+        EPS_CHNG = 1e-3
         itr = 0
-        while (float(sum(partition != past_partition)) / len(partition) > EPS or abs(ll - past_ll) > EPS)\
+        while (float(sum(partition != past_partition)) / partition.size > EPS_CHNG or abs(ll - past_ll) > EPS_CHNG)\
                 and itr < MAX_ITER:
             if ll < past_ll:
                 logging.warning('ll decreased')
@@ -251,24 +342,26 @@ class hard_EM:
         return ll, self.partition
 
     @staticmethod
-    def _prepare_graph_and_map(author_graph, author_product_map):
+    def _preprocess_graph_and_map(author_graph, author_product_map):
         # remove weak edges
-        author_graph.remove_edges_from([e for e in author_graph.edges(data=True) if e[2]['denom'] < hard_EM.DENOM_THRES])
-        author_graph = nx.convert_node_labels_to_integers(author_graph, discard_old_labels=False)
-        for a, aa in author_graph.node_labels.items():
+        author_graph.remove_edges_from([e for e in author_graph.edges(data=True) if e[2]['denom'] < HardEM.DENOM_THRESH])
+        author_graph = nx.convert_node_labels_to_integers(author_graph, label_attribute=ORIG_LABEL)
+        for aa in author_graph:
+            a = author_graph.node[aa][ORIG_LABEL]
             prods = author_product_map[a]
             del author_product_map[a]
             author_product_map[aa] = prods
         # relabel author_product_map values so the product ids start with zero and there is no gap in the range
-        author_product_map = hard_EM._relabel_to_int_product_ids(author_product_map)
+        author_product_map = HardEM._relabel_to_int_product_ids(author_product_map)
         return author_graph, author_product_map
 
     @staticmethod
-    def run_EM(author_graph, author_product_map, nparts=DEF_NPARTS, em_restarts=EM_RESTARTS,
-               em_max_iter=EM_ITERATION_LIMIT, parallel=True, nprocs=None):
+    def run_EM(author_graph, author_product_map, nparts=DFLT_NPARTS, em_restarts=EM_RESTARTS,
+               em_max_iter=EM_ITERATION_LIMIT, TAU=DEFLT_TAU, init_partition=None, parallel=True, nprocs=None):
         # setup the values
-        author_graph, author_product_map = hard_EM._prepare_graph_and_map(author_graph.copy(), author_product_map.copy())
-        map_input = [{'constr': {'author_graph': author_graph, 'author_product_map': author_product_map, 'nparts': nparts},
+        author_graph, author_product_map = HardEM._preprocess_graph_and_map(author_graph.copy(), author_product_map.copy())
+        map_input = [{'constr': {'author_graph': author_graph, 'author_product_map': author_product_map, 'nparts': nparts,
+                                 'init_partition': init_partition, 'TAU': TAU, 'parallel': parallel},
                       'itr': em_max_iter}] * em_restarts
         if parallel:
             pool = Pool(processes=nprocs)
@@ -279,15 +372,13 @@ class hard_EM:
         else:
             ll_partitions = map(em_create_n_iterate, map_input)
             ll, partition = reduce(ll_partition_max_ll, ll_partitions)
-
-        int_to_orig_node_label = {v: k for k, v in author_graph.node_labels.items()}
-        node_to_partition = {int_to_orig_node_label[n]: partition[n] for n in author_graph}
+        node_to_partition = {author_graph.node[n][ORIG_LABEL]: partition[n] for n in author_graph}
 
         return ll, node_to_partition
 
 
 def em_create_n_iterate(args):
-    em = hard_EM(**args['constr'])
+    em = HardEM(**args['constr'])
     return em.iterate(MAX_ITER=args['itr'])
 
 

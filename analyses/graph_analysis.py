@@ -73,7 +73,7 @@ def m_projection(graph_orig, members, prods, full_graph):
 
     graph = graph_orig.subgraph(graph_orig.nodes())
     #considering only favorable edges
-    graph.remove_edges_from([e for e in graph.edges(data=True) if e[2]['starRating'] >= 4])
+    graph.remove_edges_from([e for e in graph.edges(data=True) if e[2]['starRating'] < 4])
     assert set(graph) == (set(members) | set(prods))
 
     mg = nx.Graph()

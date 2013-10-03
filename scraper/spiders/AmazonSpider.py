@@ -13,6 +13,7 @@ from scrapy.http import Request
 from scrapy.spider import BaseSpider
 from scraper.utils import SingleValItemLoader, only_elem_or_default, MEMBER_TYPE, PROD_TYPE
 from lxml import etree
+from urlparse import urljoin
 
 
 review_id_re = r'(?<=review/)\w+(?=/)'
@@ -21,8 +22,8 @@ cat_name_re = r'\w+(?:\s+(?:\w+|\&))*'
 sales_rank_re = r'#(%s)\s+(?:\w+\s+)?in\s+(%s)' % (number_digit_grpd, cat_name_re)
 price_re = r'\$(%s\.\d\d)' % number_digit_grpd
 star_rating_re = r'(\d+(?:\.\d+)?)\s+out\s+of'
-product_url_id_re = r'(?<=/dp/)\w+(?=/)'
-member_url_id_re = r'(?<=profile/)\w+(?=/)'
+product_url_id_re = r'(?:(?:/gp/product/)|(?:/gp/product/glance/)|(?:/dp/))(\w+)'
+member_url_id_re = r'(?<=profile/)\w+'
 
 
 def xpath_lower_case(context, a):
@@ -69,9 +70,9 @@ class AmazonSpider(BaseSpider):
         req_meta = {'id': id_, 'type': type_, 'page': p}
         return Request(rev_url_gen(id_, p), callback=cb, meta=req_meta)
 
-    def _item_page_request(self, id_, type_):
+    def _item_page_request(self, id_, type_, referrer):
         item_url_gen, cb = self.item_req_param[type_]
-        req_meta = {'id': id_, 'type': type_}
+        req_meta = {'id': id_, 'type': type_, 'referrer': referrer}
         return Request(item_url_gen(id_), callback=cb, meta=req_meta)
 
     def _successor_page_request(self, response):
@@ -81,22 +82,37 @@ class AmazonSpider(BaseSpider):
 
     def parse_product_category_page(self, response):
         """
-        Parses a page of same category products and yields all the products in the first page
+        Parses a page of same category products and yields products in the first page
         """
         log.msg('Parsing products of the same category as: %s' % response.meta['id'], level=log.INFO, spider=self)
-        # from scrapy.shell import inspect_response
-        # inspect_response(response)
         settings = self.crawler.settings
         hxs = HtmlXPathSelector(response)
 
         product_ids = hxs.select('//body//div[@id="zg_centerListWrapper"]//a[img]//@href').re(product_url_id_re)
         n_same_cat = 0
         for product_id in product_ids:
-           yield self._rev_page_request(str(product_id), PROD_TYPE)
-           n_same_cat += 1
-           if n_same_cat > settings['SPIDER_MAX_SAME_CAT']:
+            yield self._item_page_request(str(product_id), PROD_TYPE, referrer=response.meta['referrer'])
+            n_same_cat += 1
+            if n_same_cat > settings['SPIDER_MAX_SAME_CAT']:
                 break
-  
+
+    def parse_product_manufact_page(self, response):
+        """
+        Parses a page of products of the same manufacturer and yields all the products in the first page
+        """
+        log.msg('Parsing products of the same manufacturer as: %s' % response.meta['id'], level=log.INFO, spider=self)
+        settings = self.crawler.settings
+        hxs = HtmlXPathSelector(response)
+
+        prod_ids = hxs.select('//body//div[@id="center"]//div[@class="inner"]//a/@href').re(product_url_id_re) or \
+                   hxs.select('//body//h3/a/@href').re(product_url_id_re)
+        n_same_manufact = 0
+        for prod_id in prod_ids:
+            yield self._item_page_request(str(prod_id), PROD_TYPE, referrer=response.meta['referrer'])
+            n_same_manufact += 1
+            if n_same_manufact > settings['SPIDER_MAX_SAME_MANUFACT']:
+                break
+
     def parse_product_details_page(self, response):
         """
         Extracts information from a product page and yields its review page and pages of products in the same category
@@ -115,6 +131,14 @@ class AmazonSpider(BaseSpider):
         price = hxs.select('//body//span[@id="actualPriceValue"]//text()').re(price_re) or \
                 hxs.select('//body//div[@id="price"]//span[contains(@class, "a-color-price")]/text()').re(price_re) or \
                 hxs.select('//body//div[@id="priceBlock"]//span[@class="priceLarge"]/text()').re(price_re)
+        manufact_node = hxs.select('(//body//div[@class="buying" and h1[contains(@class, "parseasinTitle")]]//a)[1]') or \
+                        hxs.select('(//body//div[@id="brandByline_feature_div"]//a[@id="brand"])[1]') or \
+                        hxs.select('(//body//span[@class="contributorNameTrigger"]//a)[1]')
+        if manufact_node:
+            manufact = manufact_node.select('./text()').extract()
+            manufact_href = manufact_node.select('./@href').extract()
+        else:
+            manufact, manufact_href = [], []
         avg_stars, n_reviews = None, None
         reviews_t = hxs.select('//body//div[@id="centerCol"]//div[@id="averageCustomerReviews"]')
         if reviews_t:
@@ -168,12 +192,18 @@ class AmazonSpider(BaseSpider):
         product.add_value('cat', cat)
         product.add_value('subCatRank', sub_cat_rank)
         product.add_value('subCat', sub_cat)
+        product.add_value('manufact', manufact)
         yield product.load_item()
 
-        # yield same category products
+        # yield same category and same manufacturer products
         same_cat_href = only_elem_or_default(sub_cat_href or best_sellers_href)
         if same_cat_href:
-            yield Request(same_cat_href, callback=self.parse_product_category_page, meta={'id': product_id, 'type': PROD_TYPE})
+            yield Request(urljoin(response.url, same_cat_href), callback=self.parse_product_category_page,
+                          meta={'id': product_id, 'type': PROD_TYPE, 'referrer': product_id})
+        manufact_href = only_elem_or_default(manufact_href)
+        if manufact_href:
+            yield Request(urljoin(response.url, manufact_href), callback=self.parse_product_manufact_page,
+                          meta={'id': product_id, 'type': PROD_TYPE, 'referrer': product_id})
 
         #yield the product reviews page.
         yield self._rev_page_request(product_id, PROD_TYPE)
@@ -218,7 +248,7 @@ class AmazonSpider(BaseSpider):
             yield review.load_item()
 
             # yield the reviewer
-            yield self._item_page_request(member_id, MEMBER_TYPE)
+            yield self._item_page_request(member_id, MEMBER_TYPE, referrer=product_id)
 
         # request subsequent pages to be downloaded
         # Find out the number of review pages
@@ -303,7 +333,7 @@ class AmazonSpider(BaseSpider):
             yield review.load_item()
 
             # yield the product
-            yield self._item_page_request(product_id, PROD_TYPE)
+            yield self._item_page_request(product_id, PROD_TYPE, referrer=member_id)
 
         #make request for subsequent pages
         if hxs.select('//table//table//td[@class="small"]/b/text()').re(r'(\d+)\s+\|'):
@@ -319,7 +349,7 @@ class AmazonSpider(BaseSpider):
                 itm_type = seed['Type']
                 itm_id = seed['ID']
                 try:
-                    req = self._item_page_request(itm_id, itm_type)
+                    req = self._item_page_request(itm_id, itm_type, referrer=None)
                 except KeyError:
                     raise ValueError("The type of seed with ID %s was %s. Expected 'p' or 'm'" % (itm_id, itm_type))
                 reqs += arg_to_iter(req)

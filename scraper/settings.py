@@ -20,7 +20,7 @@ ITEM_PIPELINES = ['scraper.pipelines.DuplicatesPipeline', 'scraper.pipelines.Ins
 
 # IO
 PROJECT_PATH = os.path.split(os.path.dirname(os.path.abspath(__file__)))[0]
-DATA_SET = 'same_cat'
+DATA_SET = 'same_cat_v2'
 DATA_SET_DIR = path.join(PROJECT_PATH, 'io', DATA_SET)
 
 # Scheduler
@@ -40,6 +40,7 @@ SPIDER_SEED_FILENAME = path.join(DATA_SET_DIR, 'seed.csv')
 SPIDER_PROD_MAX_NPAGE = 30
 SPIDER_MEMBER_MAX_NPAGE = 30
 SPIDER_MAX_SAME_CAT = 5
+SPIDER_MAX_SAME_MANUFACT = 5
 
 # Depth
 DEPTH_LIMIT = 2

@@ -1,6 +1,6 @@
 __author__ = 'Amir'
 
-from hardEM_gurobi import hard_EM
+from hardEM_gurobi import HardEM
 import networkx as nx
 import logging
 from multiprocessing import Pool
@@ -169,7 +169,7 @@ def create_synthetic_graph(N, nc):
 
 def test_hard_EM(N, nparts, write_labeled_graph=True, parallel=True):
     graph, author_prod_map = gen_test_graph(N)
-    ll, partition = hard_EM.run_EM(author_graph=graph, author_product_map=author_prod_map, nparts=nparts, parallel=parallel)
+    ll, partition = HardEM.run_EM(author_graph=graph, author_product_map=author_prod_map, nparts=nparts, parallel=parallel)
 
     print 'best loglikelihood: %s' % ll
     print partition.values()
@@ -180,7 +180,7 @@ def test_hard_EM(N, nparts, write_labeled_graph=True, parallel=True):
 
 
 def em_ll_map(prt):
-    em = hard_EM(author_graph=ex_ll_graph, author_product_map=ex_ll_author_prod_map, nparts=ex_ll_nparts, init_partition=prt)
+    em = HardEM(author_graph=ex_ll_graph, author_product_map=ex_ll_author_prod_map, nparts=ex_ll_nparts, init_partition=prt)
     return prt, em.log_likelihood()
 
 
@@ -252,7 +252,7 @@ def test_real_graph(nparts):
         author_product_mapping[a] = [p for p in full_graph[a] if 'starRating' in full_graph[a][p] and
                                                                  full_graph[a][p]['starRating'] >= 4]
     logging.info('Running EM')
-    ll, partition = hard_EM.run_EM(proper_author_graph, author_product_mapping, nparts=nparts, parallel=True)
+    ll, partition = HardEM.run_EM(proper_author_graph, author_product_mapping, nparts=nparts, parallel=True)
     print 'best loglikelihood: %s' % ll
     for n in partition:
         author_graph.node[n]['cLabel'] = int(partition[n])

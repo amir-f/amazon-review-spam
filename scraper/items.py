@@ -20,6 +20,7 @@ class Member(Item):
     ranking = Field(input_processor=Compose(only_elem_or_default, unicode.strip, remove_comma, int))
     helpfulStat = Field(input_processor=MapCompose(int))
     reviewStat = Field(input_processor=lambda v: v if isinstance(v, int) else Compose(only_elem, unicode.strip, remove_comma, int)(v))
+    referrer = Field()
 
     @property
     def key(self):
@@ -35,11 +36,13 @@ class Product(Item):
     name = Field(input_processor=Compose(TakeFirst(), unicode.strip))
     price = Field(input_processor=Compose(TakeFirst(), unicode.strip, remove_comma, float))
     cat = Field()
-    avgStars = Field(input_processor=Compose(only_elem, float))
+    avgStars = Field(input_processor=Compose(only_elem_or_default, float))
     nReviews = Field(input_processor=Compose(only_elem, unicode.strip, remove_comma, int))
     salesRank = Field(input_processor=Compose(unicode.strip, remove_comma, int))
     subCatRank = Field(input_processor=Compose(only_elem_or_default, unicode.strip, remove_comma, int))
     subCat = Field(input_processor=Compose(only_elem_or_default, unicode.strip))
+    manufact = Field(input_processor=Compose(only_elem_or_default, unicode.strip))
+    referrer = Field()
 
     @property
     def export_filename(self):
